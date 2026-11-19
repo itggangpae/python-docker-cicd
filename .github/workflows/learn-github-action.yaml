@@ -8,7 +8,7 @@ on:
     branches:
       - main
 jobs:
-  python-hello-world:
+  python-docker-cicd:
     runs-on: ubuntu-latest
 
     steps:
