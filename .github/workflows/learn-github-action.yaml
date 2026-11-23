@@ -27,7 +27,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-      - name: Login to DockerHub
+       - name: Login to DockerHub
         uses: docker/login-action@v1
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -37,3 +37,39 @@ jobs:
           docker build -t ${{ secrets.DOCKERHUB_REPO }} .
           docker tag ${{ secrets.DOCKERHUB_REPO }}:latest ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:latest
           docker push ${{ secrets.DOCKERHUB_USERNAME }}/${{ secrets.DOCKERHUB_REPO }}:latest
+ deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOCKER_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKER_REPO: ${{ secrets.DOCKERHUB_REPO }}
+          DOCKER_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: DOCKER_USERNAME, DOCKER_REPO, DOCKER_TOKEN
+          debug: true
+          timeout: 30s
+          command_timeout: 5m
+          request_pty: true
+          use_insecure_cipher: true         
+          script: |
+            echo "Successfully Connected"
+            
+            echo "Starting deployment for: $DOCKER_USERNAME/$DOCKER_REPO"
+            echo "${DOCKER_TOKEN}" | sudo docker login -u "${DOCKER_USERNAME}" --password-stdin
+            sudo docker pull $DOCKER_USERNAME/$DOCKER_REPO:latest            
+            sudo docker stop my-app-container 2>/dev/null || true
+            sudo docker rm my-app-container 2>/dev/null || true
+            sudo docker run -d \
+              --name my-app-container \
+              -p 80:5000 \
+              --restart always \
+              $DOCKER_USERNAME/$DOCKER_REPO:latest
+            
+            # 5. 불필요한 이미지(Dangling images) 정리
+            sudo docker image prune -f     
